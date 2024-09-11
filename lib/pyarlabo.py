@@ -6,8 +6,8 @@ This library manipulates and analyzes time-series coordinate files (CSV format)
 output from the AR-LABO system.
 
 Author: Okkn
-Date: 2024-02-24
-Version: 1.0.0
+Date: 2024-08-14
+Version: 1.1.0
 """
 
 from typing import List, Dict, Tuple, Optional, Union, Iterator
@@ -182,7 +182,8 @@ class Behavior:
         """実験のIDを返す"""
         return f"{self.session}c{self.camera}"
 
-    def __init__(self, experiment: ExperimentFile, rm_jump: bool = True):
+    def __init__(self, experiment: ExperimentFile, rm_jump: bool = True,
+                 px_to_mm: Optional[Union[int, float]] = None):
         self.experiment = experiment
         self.fps: int = experiment.fps
         self.session: str = experiment.session
@@ -191,6 +192,18 @@ class Behavior:
         self.n_mice: int = experiment.n_mice
 
         self.df: pd.DataFrame = Behavior.read_raw(experiment)
+
+        # 座標のpxとmm単位の変換比率が引数で指定されている場合
+        if px_to_mm is not None:
+            for k in range(1, self.n_mice + 1):
+                if f"ID-{k} [Marker-X]" not in self.df.columns:
+                    raise ValueError(
+                        f"`ID-{k} [Marker-X]` is not in the CSV file"
+                    )
+                self.df[f"ID-{k} [Marker-X(mm)]"] = \
+                    self.df[f"ID-{k} [Marker-X]"] * px_to_mm
+                self.df[f"ID-{k} [Marker-Y(mm)]"] = \
+                    self.df[f"ID-{k} [Marker-Y]"] * px_to_mm
 
         # 座標のpxとmm単位の変換比率を計算する
         self.x_px_to_mm = \
@@ -348,6 +361,9 @@ class Behavior:
                 # jumpが発生した座標を記録しておく
                 id_k_x = temp_df.loc[self.jump_index[f'id_{k}'], f'id_{k}_x']
                 id_k_y = temp_df.loc[self.jump_index[f'id_{k}'], f'id_{k}_y']
+                self.df[f"id_{k}_missing"] = None
+                self.df[f"id_{k}_missing"] = \
+                    self.df[f"id_{k}_missing"].astype(str)
                 self.df.loc[self.jump_index[f"id_{k}"], f"id_{k}_missing"] = \
                     self.jump_index[f"id_{k}"].map(
                         lambda x: f"({id_k_x[x]:.3f}, {id_k_y[x]:.3f})"
@@ -426,7 +442,7 @@ class Behavior:
             # 欠損させた値はffillとbfillで補完する
             self.df[f"id_{k}_angle"] = \
                 self.df[f"id_{k}_angle"] \
-                    .fillna(method="ffill").fillna(method="bfill")
+                    .ffill().bfill()
 
 
 class Report:
@@ -567,7 +583,7 @@ class Interaction:
                 # eventのない行は欠損値
                 self.df[f"dist_{k}_{j}_event_duration"] = \
                     self.df[f"dist_{k}_{j}_event_time"] \
-                        .fillna(method="bfill").diff().shift(-1) \
+                        .bfill().diff().shift(-1) \
                         .replace(0, np.nan)
 
             # 移動距離のself.fpsフレーム分の移動和を計算する
