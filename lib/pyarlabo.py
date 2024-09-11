@@ -6,8 +6,8 @@ This library manipulates and analyzes time-series coordinate files (CSV format)
 output from the AR-LABO system.
 
 Author: Okkn
-Date: 2024-08-14
-Version: 1.1.0
+Date: 2024-09-10
+Version: 1.2.0
 """
 
 from typing import List, Dict, Tuple, Optional, Union, Iterator
@@ -1149,6 +1149,45 @@ def calc_distance(behavior: Behavior,
                     }, index=[k])])
 
     return merge_project(distance, proj)
+
+
+def calc_percent_alone(behavior: Behavior,
+                       timeclips: Optional[Union[TimeClipList, TimeClip]]=None,
+                       proj: Optional[Project]=None,
+                       alone_threshold: int=60,
+                       ) -> pd.DataFrame:
+    """各マウスのtimeclips毎のaloneであった割合を計算する"""
+    if timeclips is None:
+        _, timeclips = clip_behavior_df(behavior)
+    if isinstance(timeclips, TimeClip):
+        timeclips = TimeClipList(timeclips, labels="total")
+
+    alone = pd.DataFrame()
+    for label, timeclip in timeclips:
+        clip_df, timeclip = clip_behavior_df(behavior, timeclip)
+        for k in range(1, behavior.n_mice + 1):
+            dist_list = []
+            for j in range(1, behavior.n_mice + 1):
+                if k != j:
+                    dist_list.append(f"dist_{min(k, j)}_{max(k, j)}")
+            closest_dist = clip_df[dist_list].min(axis=1)
+            percent_alone = (closest_dist > alone_threshold).mean() * 100
+
+            alone = pd.concat([alone, pd.DataFrame({
+                "id": k,
+                "duration": try_int(timeclips.duration()),
+                "bin": label,
+                "bin_width": try_int(timeclip.duration),
+                "bin_start": try_int(timeclip.start),
+                "bin_end": try_int(timeclip.end),
+                "percent_alone": percent_alone,
+                "session": behavior.session,
+                "camera": behavior.camera,
+                "marker_id": behavior.mice[k]["marker_id"],
+                "description": behavior.mice[k]["description"]
+            }, index=[k])])
+
+    return merge_project(alone, proj)
 
 
 def calc_interaction(inter: Interaction,
