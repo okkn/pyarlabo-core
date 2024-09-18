@@ -6,8 +6,8 @@ This library manipulates and analyzes time-series coordinate files (CSV format)
 output from the AR-LABO system.
 
 Author: Okkn
-Date: 2024-09-10
-Version: 1.2.0
+Date: 2024-09-18
+Version: 1.3.0
 """
 
 from typing import List, Dict, Tuple, Optional, Union, Iterator
@@ -51,7 +51,9 @@ class Project:
     def __init__(self, mice_list: pd.DataFrame,
                  comp_col: str, comparison: Optional[str] = None,
                  marker_id_col: str = "marker_id",
-                 session_col: str = "session", camera_col: str = "camera"):
+                 session_col: str = "session", camera_col: str = "camera",
+                 actual_session_col: Optional[str] = None,
+                 actual_camera_col: Optional[str] = None):
         self.mice_list: pd.DataFrame = mice_list.copy()
 
         # comp_colがself.mice_listにない場合はエラーを出す
@@ -79,6 +81,33 @@ class Project:
         self.camera_col: str = camera_col
         self.mice_list[self.camera_col] = self.mice_list[self.camera_col] \
             .map(str)  # cameraを文字列に変換
+
+        # actual_session_colが指定されている場合は、その列を文字列に変換する
+        if actual_session_col:
+            if actual_session_col not in self.mice_list:
+                raise ValueError(
+                    f"`{actual_session_col}` is not in the mice list.")
+            self.actual_session_col = actual_session_col
+            self.mice_list[self.actual_session_col] = \
+                self.mice_list[self.actual_session_col] \
+                    .fillna(self.mice_list[self.session_col]) \
+                    .map(str)
+        else:
+            self.actual_session_col = None
+
+        # actual_camera_colが指定されている場合は、その列を文字列に変換する
+        if actual_camera_col:
+            if actual_camera_col not in self.mice_list:
+                raise ValueError(
+                    f"`{actual_camera_col}` is not in the mice list.")
+            self.actual_camera_col = actual_camera_col
+            self.mice_list[self.actual_camera_col] = \
+                self.mice_list[self.actual_camera_col] \
+                    .astype("Int64") \
+                    .fillna(self.mice_list[self.camera_col]) \
+                    .map(str)
+        else:
+            self.actual_camera_col = None
 
 
 class ExperimentFile:
@@ -464,9 +493,18 @@ class Report:
         self.y_px_to_mm = behavior.y_px_to_mm
         self.x_width_est = behavior.x_width_est
         self.y_width_est = behavior.y_width_est
+
         self.project_info = project.mice_list[
-            (project.mice_list["Session"] == self.session)
-            & (project.mice_list["Camera"] == self.camera)]
+            (project.mice_list[project.session_col] == self.session)
+            & (project.mice_list[project.camera_col] == self.camera)]
+
+        if project.actual_session_col and project.actual_camera_col:
+            self.actual_session = self.project_info[project.actual_session_col].iloc[0]
+            self.actual_camera = self.project_info[project.actual_camera_col].iloc[0]
+        else:
+            self.actual_session = None
+            self.actual_camera = None
+
         self.mice = behavior.mice
         self.n_mice = len(self.mice)
         self.mice_info = ", ".join(
@@ -485,7 +523,11 @@ class Report:
         report = []
         report.append("=" * 80)
         report.append(f"Analysis of {self.file_path}:")
-        report.append(f" [Session] {self.session}, [Camera] {self.camera}")
+        report.append(f" [Session] {self.session},"
+                      f" [Camera] {self.camera}")
+        if self.actual_session and self.actual_camera:
+            report.append(f" [Actual Session] {self.actual_session},"
+                          f" [Actual Camera] {self.actual_camera}")
         report.append(f" [Rec Duration] {self.duration}")
         report.append(f" [Total Frames] {self.frames},"
                       f" [Actual FPS] {self.actual_fps:.2f}")
@@ -508,25 +550,48 @@ class Report:
         return self.__str__()
 
     def to_dataframe(self) -> pd.DataFrame:
-        return pd.DataFrame({
-            "experiment_id": [self.experiment_id],
-            "file_path": [self.file_path],
-            "session": [self.session],
-            "camera": [self.camera],
-            "duration": [self.duration],
-            "frames": [self.frames],
-            "actual_fps": [self.actual_fps],
-            "x_px_to_mm": [self.x_px_to_mm],
-            "y_px_to_mm": [self.y_px_to_mm],
-            "x_width_est": [self.x_width_est],
-            "y_width_est": [self.y_width_est],
-            "project_info": [self.project_info.to_string(index=False,
-                                                         index_names=False)],
-            "n_mice": [self.n_mice],
-            "mice_info": [self.mice_info],
-            "missing_rate": [self.missing],
-            "jump_index": [self.jump]
-        })
+        if self.actual_session and self.actual_camera:
+            return pd.DataFrame({
+                "experiment_id": [self.experiment_id],
+                "file_path": [self.file_path],
+                "session": [self.session],
+                "camera": [self.camera],
+                "actual_session": [self.actual_session],
+                "actual_camera": [self.actual_camera],
+                "duration": [self.duration],
+                "frames": [self.frames],
+                "actual_fps": [self.actual_fps],
+                "x_px_to_mm": [self.x_px_to_mm],
+                "y_px_to_mm": [self.y_px_to_mm],
+                "x_width_est": [self.x_width_est],
+                "y_width_est": [self.y_width_est],
+                "project_info": [self.project_info.to_string(index=False,
+                                                            index_names=False)],
+                "n_mice": [self.n_mice],
+                "mice_info": [self.mice_info],
+                "missing_rate": [self.missing],
+                "jump_index": [self.jump]
+            })
+        else:
+            return pd.DataFrame({
+                "experiment_id": [self.experiment_id],
+                "file_path": [self.file_path],
+                "session": [self.session],
+                "camera": [self.camera],
+                "duration": [self.duration],
+                "frames": [self.frames],
+                "actual_fps": [self.actual_fps],
+                "x_px_to_mm": [self.x_px_to_mm],
+                "y_px_to_mm": [self.y_px_to_mm],
+                "x_width_est": [self.x_width_est],
+                "y_width_est": [self.y_width_est],
+                "project_info": [self.project_info.to_string(index=False,
+                                                            index_names=False)],
+                "n_mice": [self.n_mice],
+                "mice_info": [self.mice_info],
+                "missing_rate": [self.missing],
+                "jump_index": [self.jump]
+            })
 
     def warnings(self,
                  duration=None,
