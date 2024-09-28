@@ -6,8 +6,8 @@ This library manipulates and analyzes time-series coordinate files (CSV format)
 output from the AR-LABO system.
 
 Author: Okkn
-Date: 2024-09-18
-Version: 1.3.0
+Date: 2024-09-28
+Version: 1.3.1
 """
 
 from typing import List, Dict, Tuple, Optional, Union, Iterator
@@ -108,6 +108,31 @@ class Project:
                     .map(str)
         else:
             self.actual_camera_col = None
+
+    def actual_session_camera(self,
+                              session: str,
+                              camera: str,
+                              fillna: bool = True
+                              ) -> Tuple[str, str]:
+        """実験の真のセッションとカメラを返す"""
+        project_info = self.mice_list[
+            (self.mice_list[self.session_col] == session)
+            & (self.mice_list[self.camera_col] == camera)]
+
+        if self.actual_session_col and self.actual_camera_col:
+            if len(project_info) == 0:
+                raise ValueError("No such session and camera in the project: "
+                                 f"session={session}, camera={camera}")
+            actual_session = project_info[self.actual_session_col].iloc[0]
+            actual_camera = project_info[self.actual_camera_col].iloc[0]
+        else:
+            if fillna:
+                actual_session = session
+                actual_camera = camera
+            else:
+                actual_session = None
+                actual_camera = None
+        return actual_session, actual_camera
 
 
 class ExperimentFile:
@@ -498,12 +523,9 @@ class Report:
             (project.mice_list[project.session_col] == self.session)
             & (project.mice_list[project.camera_col] == self.camera)]
 
-        if project.actual_session_col and project.actual_camera_col:
-            self.actual_session = self.project_info[project.actual_session_col].iloc[0]
-            self.actual_camera = self.project_info[project.actual_camera_col].iloc[0]
-        else:
-            self.actual_session = None
-            self.actual_camera = None
+        self.actual_session, self.actual_camera = \
+            project.actual_session_camera(self.session, self.camera,
+                                          fillna=False)
 
         self.mice = behavior.mice
         self.n_mice = len(self.mice)
